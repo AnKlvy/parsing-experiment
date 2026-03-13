@@ -17,7 +17,7 @@ async def get_browser_context(proxy: dict | None = None):
     context = await playwright.chromium.launch_persistent_context(
         user_data_dir="data/profile",
         # proxy=proxy,
-        headless=False,
+        headless=True,
         args=[
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",

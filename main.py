@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 
 from curl_cffi.requests import AsyncSession
 from curl_cffi.requests.exceptions import ProxyError
@@ -19,47 +20,66 @@ def parse_proxy(proxy_url: str) -> dict:
     }
 
 
-WEBSITE_URL = 'https://exhibitors.vitafoods.eu.com/live/figlobal/event46.jsp?site=47&type=company&eventid=598&map=false&name=&SugType_val=&RecordId_val='
+# WEBSITE_URL = 'https://exhibitors.vitafoods.eu.com/live/figlobal/event46.jsp?site=47&type=company&eventid=598&map=false&name=&SugType_val=&RecordId_val='
+COMPANIES_URL = 'https://exhibitors.vitafoods.eu.com/live/search/search_exhibition46json.jsp?v=25&site=47&type=company&eventid=598&name=%25&eventid=598&types=all'
 
+# app/services/requests_service.py
 
-async def async_requests(url: str, cookies: dict[str, str] = None, headers: dict[str, str] = None,
-                         params: dict[str, str] = None,
-                         proxy_raw: str = None) -> list[
-    dict[str, str]]:
+import json
+
+async def async_requests(
+        url: str,
+        cookies: dict[str, str] = None,
+        headers: dict[str, str] = None,
+        params: dict[str, str] = None,
+        proxy_raw: str = None
+) -> list[dict]:
+
     async with AsyncSession(base_url=url) as session:
         try:
-            response = await session.post(url=url,
-                                          # params=params,
-                                          # headers=headers,
-                                          # cookies=cookies,
-                                          # proxy=proxy_raw,
-                                          # data=json_data
-                                          )
+            response = await session.post(
+                url=url,
+                headers=headers,
+                cookies=cookies,
+            )
+
         except ProxyError as e:
-            print("Invalid proxy: ", e.__str__()[:500])
+            print("Invalid proxy: ", str(e)[:500])
             return []
+
         except Exception as e:
-            print("Unexpected curl cffi error:", e.__str__()[:500])
+            print("Unexpected curl cffi error:", str(e)[:500])
             return []
+
         print(response.status_code)
 
-        cookies_dict = dict(response.cookies.items())
+        raw_text = response.text
 
-        print("cookies:", cookies_dict)
+        json_start = raw_text.find("{")
+        if json_start == -1:
+            return []
 
-        print("response from cffi: ", response.text[:1000])
-        if response.status_code == 200:
-            print("Successful proxy: {}".format(proxy_raw))
+        json_data = json.loads(raw_text[json_start:])
+        results = json_data.get("results", [])
 
-        return response
+        print(f"companies found: {len(results)}")
 
+        # сохранение
+        output_path = Path("data/companies.json")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(results, f, ensure_ascii=False, indent=2)
+
+        return results
 async def playwright_request(url, proxy=None):
     playwright, context = await get_browser_context(proxy)
 
     try:
         try:
-            page, response = await warmup_session(context, url)
+            # page, response = await warmup_session(context, url)
+            page = await context.new_page()
+            response = await page.goto(url)
         except:
             return None, None
 
@@ -83,17 +103,18 @@ async def playwright_request(url, proxy=None):
 
 
 async def main():
-    cookies, user_agent = await playwright_request(WEBSITE_URL)
+    cookies, user_agent = await playwright_request(COMPANIES_URL)
     headers = {'user-agent': user_agent}
 
 
-    await async_requests(url=WEBSITE_URL,
-                         cookies=cookies,
-                         headers=headers,
-                         # params=params,
-                         # proxy_raw=proxy_raw,
-                         )
-    await asyncio.sleep(1)
+    for _ in range(10000):
+        await async_requests(url=COMPANIES_URL,
+                             cookies=cookies,
+                             headers=headers,
+                             # params=params,
+                             # proxy_raw=proxy_raw,
+                             )
+        await asyncio.sleep(1)
 
 if __name__ == "__main__":
     asyncio.run(main())
